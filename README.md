@@ -1,70 +1,69 @@
 # dsh-web-split
 
-**Free split screen for DeepSeek Harness Web.** Open a split view beside your normal work and keep two, three or four Sessions visible at once — each pane renders that Session's real conversation, input box included.
+[**中文**](README.md) | [English](README.en.md)
 
-![split view](screenshots/split-panes.png)
+**给 DeepSeek Harness Web 加一个自由分屏**——开一个分屏视图放在旁边，同时盯住两个、三个甚至四个会话；每个窗格渲染的是那个会话**真正的对话**，连输入框都能直接用。
 
-## Features
+![三个窗格](screenshots/split-panes.png)
 
-- **Sidebar entry** — a `分屏 / Split` button in the sidebar opens the split view as a main panel.
-- **Free layout** — split right or down, drag a pane onto another to swap them, drag onto a pane's edge to move it there, drag the divider to resize, double-click the divider to flip the orientation and reset to 50/50.
-- **Fill panes from anywhere** — drag a Session row from the sidebar into a pane, or use the row's own "放入分屏窗格 / Load into split pane" action, or the pane's context menu.
-- **Real conversations** — every pane mounts the official `conversation.content` slot for its Session, so streaming, tools, attachments and the composer all behave exactly as they do in the normal view.
-- **Unread dots** — the sidebar's unread indicator is mirrored onto the pane title, so you can see which pane is talking.
-- **Import running Sessions** — one menu action arranges every running Session into panes (up to the pane cap) without closing anything.
-- **Persisted layout** — the whole tree (panes, ratios, assignment) is kept in `localStorage` and restored on reload.
-- **Bilingual UI** — Chinese and English strings ship with the plugin.
-- **No host-side behaviour** — the host half only announces the client bundle; nothing in the Session domain is touched.
+## 功能
 
-## Install
+- **侧栏入口**：侧栏里的「分屏」按钮把分屏视图作为一个主面板打开。
+- **自由布局**：向右/向下分屏；把一个窗格拖到另一个窗格上＝交换；拖到窗格边缘＝把窗格挪过去；拖分隔线改比例；**双击分隔线**横竖翻转并回到 50/50。
+- **从各处填充窗格**：从左侧会话列表把一行拖进窗格、点行尾的「放入分屏窗格」按钮，或者用窗格右键菜单。
+- **真对话**：每个窗格挂载官方的 `conversation.content` 槽位，流式输出、工具调用、附件、输入框的行为与正常视图完全一致。
+- **未读点同步**：侧栏的未读指示同步到窗格标题上，一眼看出哪个窗格在说话。
+- **导入运行中会话**：一次把正在跑的会话按窗格上限排进分屏，不会关闭任何会话。
+- **布局持久化**：整棵窗格树（分栏、比例、分配）存在 `localStorage`，刷新后恢复。
+- **中英双语界面**：插件自带中文与英文文案。
+- **宿主侧零行为**：宿主那一半只负责声明客户端 bundle，不碰 Session 域。
 
-The plugin is a bundle with a loader patch (`cordis.patch.yml`); install it like any other DSH plugin:
+![窗格右键菜单](screenshots/pane-menu.png)
+
+## 安装
+
+插件是一个带 loader patch（`cordis.patch.yml`）的 bundle，和普通 DSH 插件一样安装：
 
 ```bash
-# straight from GitHub
+# 直接从 GitHub 装
 dsh plugin --profile web add github:yuloop/dsh-web-split
 
-# or from a local checkout
+# 或者从本地目录装
 dsh plugin --profile web add /path/to/dsh-web-split
 ```
 
-Restart DSH after installing, then reload the page. The sidebar shows the `分屏` entry.
+装完**重启 DSH**，然后刷新页面，侧栏就会出现「分屏」入口。
 
-> `cordis.patch.yml` names the package (`dsh-web-split`). If you vendor the files into a local plugin directory instead, point its patch entry at the absolute path of `index.js` — that is how it runs on the machine it was developed on.
+> `cordis.patch.yml` 用包名 `dsh-web-split` 指向 `index.js`。如果你是手工把文件拷进本地插件目录（而不是用安装器），把 patch 里的 `name` 改成 `index.js` 的绝对路径——开发机上就是这么跑的。
 
-## Known limitation
+## 已知限制（重要）
 
-Clicking a **file link or an image inside a pane** shows an error dialog:
+在**窗格里点击文件链接或图片**会弹错误框：
 
 ```
 无法打开文件 / sidebarRight: no session surface is mounted
 ```
 
-Reason: file links open the right sidebar through `sidebarRight.require()`, which only works for the Session that the shell currently has *on screen*. A global `main` panel carries no Session context, so the call throws. Panes still render and scroll their content; only the file/image preview is affected — open the file from the normal conversation view instead (click the Session in the sidebar, then use the link there).
+原因：文件链接是通过右侧栏的 `sidebarRight.require()` 打开的，而它只认「当前显示在会话列上的那个会话」。全局的 `main` 面板不带会话上下文，所以这个调用会抛错。窗格本身照常渲染、滚动、输入；**只有文件/图片预览受影响**——想看文件就点侧栏那个会话回到普通视图，再点链接。
 
-This limitation is why the panel-based design is the stable release: a floating variant that keeps the conversation column active is developed separately and is **not** part of this release (it changes where the grid lives and needs the shell's `shell.overlay` seam).
+这条限制也正是本版本采用「面板式」的原因：还有一个「浮层式」变体（把网格浮在会话列上，让右侧栏继续工作），它换掉了网格所在的位置，发布时还不稳定，因此**不包含在 1.0.0 里**。
 
-## Requirements
+## 环境要求
 
-- DeepSeek Harness Web with the official UI packages (`dsh-client-ui-layout`, `-session`, `-conversation`, `dsh-client-locale`, `dsh-api-session-controller`).
-- Developed against DSH `0.1.1-rc.2`.
+- DeepSeek Harness Web，且带官方 UI 包（`dsh-client-ui-layout`、`-session`、`-conversation`、`dsh-client-locale`、`dsh-api-session-controller`）。
+- 开发与验证用的是 DSH `0.1.1-rc.2`。
 
-## Layout
+## 目录结构
 
 ```
-client.js          the whole web half (panel, pane tree, drag & drop, i18n, CSS)
-index.js           host half: announces the bundle, registers nothing else
-cordis.patch.yml   loader patch fragment ("insert id: web-split")
-package.json       manifest, including the dsh.client declaration
-docs/DEVLOG.md     development log, day by day (Chinese, local notes)
+client.js          Web 端全部实现（面板、窗格树、拖放、i18n、CSS）
+index.js           宿主侧：只声明 bundle，不注册别的
+cordis.patch.yml   loader patch 片段（insert id: web-split）
+package.json       manifest，含 dsh.client 声明
+docs/DEVLOG.md     开发日志，逐日记录（中文）
+screenshots/       README 用的截图
 ```
 
-## License
+## 许可
 
-MIT — see [LICENSE](LICENSE).
-
-## Screenshots
-
-| | |
-|---|---|
-| ![three panes](screenshots/split-panes.png) | ![pane menu](screenshots/pane-menu.png) |
+MIT，见 [LICENSE](LICENSE)。
