@@ -1,6 +1,6 @@
 {
   "name": "dsh-web-split",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Free split screen for DeepSeek Harness Web: draggable panes, each rendering one Session's conversation.",
   "type": "module",
   "license": "MIT",
