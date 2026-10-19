@@ -1,0 +1,52 @@
+{
+  "name": "dsh-web-split",
+  "version": "1.0.0",
+  "description": "Free split screen for DeepSeek Harness Web: draggable panes, each rendering one Session's conversation.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "split-screen",
+    "web-ui"
+  ],
+  "homepage": "https://github.com/yuloop/dsh-web-split#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yuloop/dsh-web-split.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yuloop/dsh-web-split/issues"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "meta": {
+    "title": "Free split screen",
+    "description": "A split view that holds freely draggable panes, each rendering one Session's conversation; drag a session title from the sidebar into any pane."
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-api-session-controller"
+      ]
+    }
+  }
+}

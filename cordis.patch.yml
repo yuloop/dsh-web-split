@@ -1,0 +1,5 @@
+# dsh-web-split 的 loader patch 片段（bundle 自带）。
+# name 用包名：安装器把包放进 profile 后按名字解析到 index.js。
+- insert:
+    - id: web-split
+      name: 'dsh-web-split'
