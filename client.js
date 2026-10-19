@@ -48,6 +48,18 @@ window.__ModuleLoader__.load({
     /** Panes whose composer editor is raised to four lines (see the header ⇕). */
     const DOCK_TALL_KEY = "dsh-split-docktall-v1";
     const MAX_PANES = 6;
+    /**
+     * Workspaces whose Sessions are started by the scheduler rather than by the
+     * user: importing them into panes would fill the grid with jobs nobody asked
+     * to watch. Matched on the last path segment, so no absolute path is baked in
+     * — change the name if your scheduler uses another directory.
+     */
+    const SCHEDULED_WORKSPACE = "cron-jobs";
+    /** Whether a Session row belongs to a scheduler workspace. */
+    const fromScheduler = (row) => {
+      const cwd = typeof row?.cwd === "string" ? row.cwd.replace(/\\/g, "/").replace(/\/+$/, "") : "";
+      return cwd === "" ? false : cwd.split("/").pop() === SCHEDULED_WORKSPACE;
+    };
     /** Smallest share of a split either side may keep. */
     const MIN_RATIO = 0.15;
     /**
@@ -1443,7 +1455,9 @@ window.__ModuleLoader__.load({
         return map;
       }, [list]);
 
-      const runningIds = list.ids.filter((id) => list.meta[id]?.running === true);
+      const runningIds = list.ids.filter(
+        (id) => list.meta[id]?.running === true && fromScheduler(list.byId?.[id] ?? list.meta[id]) === false
+      );
 
       /* ---- sidebar "completed" dot ---- */
 
