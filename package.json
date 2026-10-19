@@ -8,6 +8,7 @@
     "dsh-plugin",
     "deepseek-harness",
     "split-screen",
+    "分屏",
     "web-ui"
   ],
   "homepage": "https://github.com/yuloop/dsh-web-split#readme",
@@ -31,8 +32,8 @@
     "LICENSE"
   ],
   "meta": {
-    "title": "Free split screen",
-    "description": "A split view that holds freely draggable panes, each rendering one Session's conversation; drag a session title from the sidebar into any pane."
+    "title": "分屏（自由分屏）",
+    "description": "给 DSH Web 加自由分屏：可拖拽的窗格，每个窗格渲染一个会话的完整对话。"
   },
   "dsh": {
     "bundle": {
