@@ -13,7 +13,7 @@
 - **Fill panes from anywhere** — drag a Session row from the sidebar into a pane, or use the row's own "放入分屏窗格 / Load into split pane" action, or the pane's context menu.
 - **Real conversations** — every pane mounts the official `conversation.content` slot for its Session, so streaming, tools, attachments and the composer all behave exactly as they do in the normal view.
 - **Unread dots** — the sidebar's unread indicator is mirrored onto the pane title, so you can see which pane is talking.
-- **Import running Sessions** — one menu action arranges every running Session into panes (up to the pane cap) without closing anything.
+- **Import running Sessions** — one menu action arranges every running Session into panes (up to the pane cap) without closing anything. Sessions from a scheduler workspace are skipped (last cwd segment `cron-jobs`; see `SCHEDULED_WORKSPACE` in `client.js`).
 - **Persisted layout** — the whole tree (panes, ratios, assignment) is kept in `localStorage` and restored on reload.
 - **Bilingual UI** — Chinese and English strings ship with the plugin.
 - **No host-side behaviour** — the host half only announces the client bundle; nothing in the Session domain is touched.

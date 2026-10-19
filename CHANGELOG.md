@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1 — 2026-10-19
+
+- `导入运行中 / Import running` 现在**跳过定时任务工作区**（cwd 最后一段是 `cron-jobs` 的会话），
+  计数与导入都不含它们——定时任务不是用来盯的，塞进窗格只会占位置。
+  判定见 `client.js` 的 `SCHEDULED_WORKSPACE`，调度器用别的目录名时改这个常量即可。
+
 ## 1.0.0 — 2026-10-19
 
 First public release. It is the panel-based split view that has been running locally for two weeks:
