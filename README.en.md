@@ -23,7 +23,10 @@
 The plugin is a bundle with a loader patch (`cordis.patch.yml`); install it like any other DSH plugin:
 
 ```bash
-# straight from GitHub
+# prebuilt tarball (recommended: no allowBuilds prompt)
+dsh plugin --profile web add https://github.com/yuloop/dsh-web-split/releases/latest/download/dsh-web-split.tgz
+
+# straight from GitHub source
 dsh plugin --profile web add github:yuloop/dsh-web-split
 
 # or from a local checkout
