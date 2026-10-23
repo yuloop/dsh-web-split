@@ -25,7 +25,10 @@
 插件是一个带 loader patch（`cordis.patch.yml`）的 bundle，和普通 DSH 插件一样安装：
 
 ```bash
-# 直接从 GitHub 装
+# 预构建包（推荐，免 allowBuilds 构建授权）
+dsh plugin --profile web add https://github.com/yuloop/dsh-web-split/releases/latest/download/dsh-web-split.tgz
+
+# 直接从 GitHub 源码装
 dsh plugin --profile web add github:yuloop/dsh-web-split
 
 # 或者从本地目录装
