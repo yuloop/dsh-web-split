@@ -126,6 +126,7 @@ window.__ModuleLoader__.load({
       paneEmptyAlt: "或点该行尾的「放入分屏」按钮",
       paneNew: "新建会话",
       paneClosed: "会话已不存在",
+      paneLoading: "正在载入会话…",
       paneFocusHint: "已选中：新的会话会放进这个窗格",
       paneDragHint: "拖到另一个窗格上松开 = 交换两个窗格的会话",
       paneSplitCol: "左右拆分",
@@ -167,6 +168,7 @@ window.__ModuleLoader__.load({
       paneEmptyAlt: "or use the row's \"into split\" button",
       paneNew: "New session",
       paneClosed: "Session no longer exists",
+      paneLoading: "Loading session…",
       paneFocusHint: "Selected: new sessions load into this pane",
       paneDragHint: "Drag onto another pane to swap their sessions",
       paneSplitCol: "Split left/right",
@@ -251,25 +253,14 @@ window.__ModuleLoader__.load({
   --dsh-chat-content-width:calc(100% - 32px);
   --dsh-composer-card-max-width:calc(100% - 16px);
 }
-/* Compact composer dock inside panes. The official composer spends 132px of a
-   857px pane: 8px card top padding + a 36px one-line editor + a 12px gap + a
-   42px toolbar row, plus a 30px metric row (rounds / tokens / context) in its
-   own row *under* the card. Panes keep the editor at one line and trim the
-   paddings, and — when the pane is wide enough that the toolbar row has a real
-   empty middle — float the metric row into that empty middle instead of
-   spending its own 30px. Class suffixes below are CSS-module locals and stay
-   stable across builds; everything is scoped to a pane. */
-.dshSplit_pane [class*="composerStack"] [class*="_card"]{padding-top:4px;gap:6px}
-.dshSplit_pane [class*="composerStack"] [class*="_input"]{min-height:32px;padding:2px 8px 0 14px}
-.dshSplit_pane [class*="composerStack"] [class*="_row"]{padding:0 8px 4px}
-.dshSplit_pane{container-type:inline-size}
-@container (min-width:1100px){
-  .dshSplit_pane [class*="composerStack"] [class*="_dock"]{position:absolute;right:250px;bottom:10px;height:auto;max-width:52%}
-}
-/* The pane header can raise the editor to four lines on demand (the dock stays
-   one line by default). The official editor already scrolls internally, so a
-   larger min-height is enough; the wrappers around it follow its box. */
-.dshSplit_pane[data-docktall="1"] [class*="composerStack"] [class*="_input"]{min-height:112px}
+/* Compact only the editor. Keep metrics below its controls, including on wide panes. */
+.dshSplit_pane [data-composer-card]{padding-top:4px;gap:6px}
+.dshSplit_pane [data-composer-card] > [data-input-scroll] [data-placeholder]{min-height:32px}
+.dshSplit_pane [data-composer-card] > [data-input-scroll] + div{padding:0 8px 4px}
+.dshSplit_pane{container:split-pane / inline-size}
+.dshSplit_pane [data-composer-card] + [data-composer-dock]{position:static;box-sizing:border-box;max-inline-size:100%;flex-wrap:wrap;row-gap:2px}
+/* Keep the editor's native padding aligned with its placeholder at either height. */
+.dshSplit_pane[data-docktall="1"] [data-composer-card] > [data-input-scroll] [data-placeholder]{min-height:112px}
 .dshSplit_empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:16px;text-align:center;color:var(--dsw-alias-label-tertiary);font-size:12.5px;line-height:1.6}
 .dshSplit_emptySmall{font-size:11.5px;opacity:.8}
 .dshSplit_dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--dsw-alias-state-success-primary,#3fb950)}
@@ -706,17 +697,68 @@ window.__ModuleLoader__.load({
      * ------------------------------------------------------------------ */
 
     /**
-     * Retain one Session for as long as the pane shows it.
+     * How many panes may open their history at the same time.
      *
-     * The held value carries its own sessionId and is only surfaced while it
-     * still matches the pane's session. Without that guard the window between
-     * an effect cleanup (which releases the reference) and the state update
-     * that follows it would render `SessionProvider` with a released
+     * Retaining a pane IS opening its history (the sessions service attaches
+     * the open to the reference), and one open restores the stored log of that
+     * session in one go. Mounting a saved six-pane layout therefore used to
+     * fire six of those restores in the same tick. Panes now queue for a slot:
+     * the first one or two start immediately, the rest wait their turn and
+     * render a loading placeholder meanwhile.
+     */
+    const OPEN_CONCURRENCY = 2;
+    /**
+     * How long one open may keep its slot before the next pane may start anyway.
+     * Comfortably above a realistic restore of a large session, short enough
+     * that a stuck stream cannot park the queue.
+     */
+    const OPEN_SLOT_TIMEOUT_MS = 15000;
+    /** Panes waiting for an open slot, oldest first; `active` counts granted ones. */
+    const openQueue = { active: 0, waiting: [] };
+
+    /** Resolves with a release function once fewer than OPEN_CONCURRENCY opens run. */
+    function acquireOpenSlot() {
+      return new Promise((resolve) => {
+        const grant = () => {
+          let released = false;
+          resolve(() => {
+            if (released) return;
+            released = true;
+            openQueue.active -= 1;
+            const next = openQueue.waiting.shift();
+            if (next) {
+              openQueue.active += 1;
+              next();
+            }
+          });
+        };
+        if (openQueue.active < OPEN_CONCURRENCY) {
+          openQueue.active += 1;
+          grant();
+        } else {
+          openQueue.waiting.push(grant);
+        }
+      });
+    }
+
+    /**
+     * Retain one Session for as long as the pane shows it, once an open slot
+     * is free. The held value carries its own sessionId and is only surfaced
+     * while it still matches the pane's session. Without that guard the window
+     * between an effect cleanup (which releases the reference) and the state
+     * update that follows it would render `SessionProvider` with a released
      * reference, and the sessions service throws on a released `.binding`.
+     *
+     * `loading` is true until the reference exists, so a queued pane shows
+     * "loading history" instead of the closed-session empty state. A session
+     * that is already open elsewhere (the main tab, another pane) resolves at
+     * once, so the queue costs nothing for it.
      */
     function usePaneReference(sessionId) {
       const [held, setHeld] = React.useState(null);
-      const reference = held !== null && held.sessionId === sessionId ? held.reference : null;
+      const current = held !== null && held.sessionId === sessionId ? held : null;
+      const reference = current === null ? null : current.reference;
+      const loading = Boolean(sessionId) && current === null;
       React.useEffect(() => {
         if (!sessionId) {
           setHeld(null);
@@ -725,28 +767,71 @@ window.__ModuleLoader__.load({
         const sessions = hostCtx?.sessions;
         if (!sessions) return undefined;
         let acquired = null;
-        try {
-          const controller = new AbortController();
-          acquired = sessions.retain(sessionId, {
-            source: RETAIN_SOURCE,
-            signal: controller.signal
-          });
-          // A failed open must not surface as an unhandled rejection; the pane
-          // simply stays in its empty state because no binding resolves.
-          acquired.ready.catch(() => {});
-          setHeld({ sessionId, reference: acquired });
-          return () => {
-            controller.abort();
-            acquired.release();
-            setHeld(null);
+        let releaseSlot = null;
+        let slotTimer = null;
+        let cancelled = false;
+        const controller = new AbortController();
+        void acquireOpenSlot().then((release) => {
+          // The pane may have been closed or switched while it was queued; the
+          // slot is then handed straight back instead of opening anything.
+          if (cancelled) {
+            release();
+            return;
+          }
+          releaseSlot = release;
+          try {
+            acquired = sessions.retain(sessionId, {
+              source: RETAIN_SOURCE,
+              // The conversation facet is what makes the host fold this
+              // session's event window into transcript nodes. Without it a
+              // pane keeps the Session object and a live composer but its
+              // transcript stays empty — only the main view (which retains
+              // the facet) ever showed content. The facet is released with
+              // the reference, and the host then re-buffers the session.
+              facets: { conversation: true },
+              signal: controller.signal
+            });
+          } catch {
+            // Unknown or already disposed id: the pane shows its empty state.
+            releaseSlot();
+            releaseSlot = null;
+            setHeld({ sessionId, reference: null });
+            return;
+          }
+          // The slot is held until the open settles, not until the pane closes:
+          // a failed open must not surface as an unhandled rejection, and the
+          // queue must move on either way. An open that never settles (a stuck
+          // backend stream) gives its slot up after OPEN_SLOT_TIMEOUT_MS so it
+          // cannot block the panes behind it for good.
+          const settle = () => {
+            if (slotTimer !== null) {
+              clearTimeout(slotTimer);
+              slotTimer = null;
+            }
+            if (releaseSlot === null) return;
+            releaseSlot();
+            releaseSlot = null;
           };
-        } catch {
-          // Unknown or already disposed id: the pane shows its empty state.
+          slotTimer = setTimeout(settle, OPEN_SLOT_TIMEOUT_MS);
+          acquired.ready.then(settle, settle);
+          setHeld({ sessionId, reference: acquired });
+        });
+        return () => {
+          cancelled = true;
+          controller.abort();
+          acquired?.release();
+          if (slotTimer !== null) {
+            clearTimeout(slotTimer);
+            slotTimer = null;
+          }
+          if (releaseSlot !== null) {
+            releaseSlot();
+            releaseSlot = null;
+          }
           setHeld(null);
-          return undefined;
-        }
+        };
       }, [sessionId]);
-      return reference;
+      return { reference, loading };
     }
 
     /**
@@ -849,8 +934,9 @@ window.__ModuleLoader__.load({
     function copyPlainText(text) {
       const legacy = () => {
         let ok = false;
+        let area = null;
         try {
-          const area = document.createElement("textarea");
+          area = document.createElement("textarea");
           area.value = text;
           area.setAttribute("readonly", "");
           area.style.position = "fixed";
@@ -859,9 +945,10 @@ window.__ModuleLoader__.load({
           document.body.appendChild(area);
           area.select();
           ok = document.execCommand("copy");
-          area.remove();
-        } catch {
-          ok = false;
+        } finally {
+          // The cleanup must survive a failed select/copy, or the hidden textarea
+          // leaks into <body> on every failed legacy fallback.
+          if (area) area.remove();
         }
         return ok;
       };
@@ -962,7 +1049,20 @@ window.__ModuleLoader__.load({
     function placeCaretAt(field, x, y) {
       try {
         if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) return;
-        const range = document.caretRangeFromPoint?.(x, y) ?? null;
+        const doc = document;
+        let range = null;
+        if (typeof doc.caretRangeFromPoint === "function") {
+          // Chrome and Safari: the caret under a point, already as a range.
+          range = doc.caretRangeFromPoint(x, y) ?? null;
+        } else if (typeof doc.caretPositionFromPoint === "function") {
+          // The standard spelling (Firefox); build the equivalent collapsed range.
+          const position = doc.caretPositionFromPoint(x, y);
+          if (position !== null) {
+            range = doc.createRange();
+            range.setStart(position.offsetNode, position.offset);
+            range.setEnd(position.offsetNode, position.offset);
+          }
+        }
         if (range === null || !field.contains(range.startContainer)) return;
         const selection = window.getSelection?.();
         if (!selection) return;
@@ -1036,6 +1136,20 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /**
+     * Shown while a pane waits for its turn to open history. It is deliberately
+     * the same block as the empty state — the pane is neither empty nor closed,
+     * it is simply not connected yet.
+     */
+    function LoadingPane() {
+      const t = translator;
+      return h(
+        "div",
+        { className: "dshSplit_empty", "data-split-loading": "1" },
+        h("div", null, t("paneLoading"))
+      );
+    }
+
     function EmptyPane(props) {
       const t = translator;
       return h(
@@ -1070,7 +1184,9 @@ window.__ModuleLoader__.load({
       const meta = {};
       for (const id of state.ids) {
         const entry = state.byId[id];
-        meta[id] = { title: entry?.displayTitle ?? null, running: entry?.running === true };
+        // cwd 也要带出来：调度器工作区的过滤靠它判断（2026-10-23 修：以前只有 title/running，
+        // fromScheduler 永远拿不到 cwd，过滤条件恒为 false，等于没生效）
+        meta[id] = { title: entry?.displayTitle ?? null, running: entry?.running === true, cwd: entry?.cwd ?? "" };
       }
       return { ids: state.ids, phase: state.phase, meta };
     }
@@ -1091,7 +1207,7 @@ window.__ModuleLoader__.load({
           if (left !== right) return false;
           continue;
         }
-        if (left.title !== right.title || left.running !== right.running) return false;
+        if (left.title !== right.title || left.running !== right.running || left.cwd !== right.cwd) return false;
       }
       return true;
     }
@@ -1131,7 +1247,7 @@ window.__ModuleLoader__.load({
       const t = translator;
       const { pane, rect } = props;
       const title = props.title ?? pane.sessionId ?? t("paneEmpty");
-      const reference = usePaneReference(pane.sessionId);
+      const { reference, loading } = usePaneReference(pane.sessionId);
       const headPressRef = React.useRef({ id: null, time: 0, x: 0, y: 0 });
       const onHeadPointerDown = (event) => {
         if (event.button !== 0) return;
@@ -1255,7 +1371,9 @@ window.__ModuleLoader__.load({
                 { key: pane.sessionId },
                 h(props.SessionProvider, { session: reference }, props.renderSlot("split.pane.body", {}))
               )
-            : h(EmptyPane, { sessionId: pane.sessionId, paneId: pane.id, onCreate: props.onCreateSession })
+            : loading
+              ? h(LoadingPane)
+              : h(EmptyPane, { sessionId: pane.sessionId, paneId: pane.id, onCreate: props.onCreateSession })
         )
       );
     }
@@ -1456,7 +1574,7 @@ window.__ModuleLoader__.load({
       }, [list]);
 
       const runningIds = list.ids.filter(
-        (id) => list.meta[id]?.running === true && fromScheduler(list.byId?.[id] ?? list.meta[id]) === false
+        (id) => list.meta[id]?.running === true && fromScheduler(list.meta[id]) === false
       );
 
       /* ---- sidebar "completed" dot ---- */
@@ -1878,7 +1996,19 @@ window.__ModuleLoader__.load({
         event.preventDefault();
         const canvas = canvasRef.current;
         const box = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0 };
-        const live = selectionText();
+        // `window.getSelection()` is empty for a selection made inside an
+        // <input>/<textarea> (those selections live on the element, not on the
+        // document), so the most common right-click case — inside a composer —
+        // reads the element's own selection range instead.
+        const target = editableFrom(event.target);
+        let live = "";
+        if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+          const start = target.selectionStart ?? 0;
+          const end = target.selectionEnd ?? start;
+          live = target.value.slice(start, end);
+        } else {
+          live = selectionText();
+        }
         setMenu({
           paneId,
           x: event.clientX - box.left,
@@ -2276,8 +2406,9 @@ window.__ModuleLoader__.load({
 
         // One stylesheet for the whole plugin, removed with the fiber.
         const style = document.createElement("style");
-        style.setAttribute("data-dsh-split", "");
+        style.setAttribute("data-dsh-split", "status-row");
         style.textContent = CSS;
+        document.head.querySelectorAll("style[data-dsh-split]").forEach(previous => previous.remove());
         document.head.appendChild(style);
         ctx.effect(() => () => style.remove(), "web-split: stylesheet");
 

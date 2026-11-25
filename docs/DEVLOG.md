@@ -385,3 +385,44 @@ systemctl restart dsh-web
 | 实测 | 线上（隐身浏览器同款冷缓存）：进分屏后点左侧会话列表 ⇒ 4 秒内 10 次采样 `split=true`、浮层宽度恒为 1398（不再消失）。私有实例同一脚本同样保持。`probe-exit-open.mjs`（分屏里点文件）依旧 **2/2：退出分屏 + 右侧栏打开文件**；`ctxsplit.mjs` 全绿（退出改走菜单行）。 |
 | 审计 | 复审 **CLEAN**（回执 `/root/.claude/logs/ocr-split-audit/2026-10-19T05-55-14-607Z/receipt.json`）。 |
 | 部署 | 线上 `client.js` = `89ce550a1292bf89` / 128604 B；回退用 `/root/.dsh-home/verify-split/client.live-before-p9g-20261019-135610.js`（上一版 `d3e4077c117815fd`）。另：插件包是 `immutable` 一年强缓存、`rev` 只在 dsh-web 启动时计算，所以这一版安排了一次安全重启来刷新 `rev`（否则老页面永远拿旧包）。 |
+
+### 2026-11-23 / 11-24 第 10 期：分屏底栏、单行目标、排队载入、`conversation` 分面
+
+升级到 DSH `0.2.3-alpha.2` 之后，分屏暴露了四个问题，逐个处理并实测。结论先写：**「分屏慢」不是慢，是只有一个窗格真的装配了对话**，根因是官方新增的保留分面。
+
+#### 底栏重叠（11-23）
+
+| 项 | 内容 |
+| --- | --- |
+| 现象 | 分屏窗格里底部的统计（轮数、速度、用量、缓存命中率、上下文占比）压在「极速」徽标、滑块、模型选择器上，文字互相盖住。 |
+| 真因 | 旧样式用宽泛的 `[class*="_dock"]` / `[class*="_card"]` 选择器把整排 dock 搬出文档流，并 `position:absolute; right:250px; bottom:10px`。官方 InputBar 的统计和工具行是两个兄弟节点，一搬就重叠。 |
+| 修法 | 改成官方数据钩子：`[data-composer-card] + [data-composer-dock]` 保持 `position:static`，`flex-wrap:wrap; row-gap:2px`，统计自然落成卡片下面独立一行；窄窗格换行、宽窗格并排。重新注入前先移除旧 `style[data-dsh-split]`，热更新不叠两份。 |
+| 实测 | 真实双分屏、同一站点，8 种窗格宽度（378 / 422 / 450 / 658 / 691 / 1099 / 1100 / 1768 px）用 DOM Range 逐字量：统计文字与工具行文字、11 个控件零相交，最小间隙 11 px，无裁切；378/422 换两行。反例对照（换回旧样式）量到 13 处相交，其中含「缓存命中率 vs 极速滑块」「上下文占比 vs 模型名」。 |
+
+#### 目标栏占三行（11-23）
+
+早前为了在 658 px 窗格里看全目标，插件加过 `white-space:normal; max-block-size:3lh` 的覆盖。官方 `.objective` 本来就是 `flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap`，覆盖只会让人以为坏掉。删掉那两行覆盖即可，单行省略、点「编辑」看全文。实测 422 / 691 / 1025 / 1958 px 四种窗格宽度都是一行（文字高 20、条高 36）、三颗操作按钮不压在文字上。
+
+#### 排队异步打开窗格（11-24）
+
+| 项 | 内容 |
+| --- | --- |
+| 用户要求 | 「分屏加载，载入历史会话，异步载入，分段是内容减少一次性载入过多。」 |
+| 量到的事实 | `sessions.retain()` 立刻 `attachOpening(session.open())`，一次 open 就把整段日志取回（官方 `HISTORY_PAGE_OPTIONS` 是模块常量：至少 50 条、至多 500 条消息，没有配置入口）。旧代码在窗格挂载时同步 retain，恢复 6 格布局就是同一拍发起 6 次历史打开。 |
+| 修法 | `usePaneReference` 先领名额（`OPEN_CONCURRENCY = 2`）再 retain，`acquired.ready` 落定（成功或失败）归还名额，窗格卸载立即归还，卡住 15 秒强制让位（`OPEN_SLOT_TIMEOUT_MS`）。排队期间显示「正在载入会话…」（`paneLoading`，中英文都有），不再落进「会话已不存在」。已打开的会话名额立刻拿到，等于没排队。 |
+| 实测 | 真实浏览器 4 窗格冷开，逐帧记录到 `[ready, official-loading, official-loading, placeholder]` → 第三格进占位 → 依次 ready，占位文案与截图都确认。 |
+| 边界 | 单会话首屏仍是后端整段还原，插件改不了；要真正减小单次字节数得改 DSH 本体。 |
+
+#### 窗格只有一格有对话（11-24，最要紧）
+
+| 项 | 内容 |
+| --- | --- |
+| 用户要求 | 「webui 正常切换会话现在优化后，加载都是很快的，但是分屏慢，需要优化分屏多窗口的时候，加载会话要异步，分块加载。」 |
+| 量到的事实 | 主视图冷开一个重会话约 0.5 秒；同一会话放进窗格 5 秒过去也只有**一格**有对话，其余只剩输入框加一句「加载更早」。逐格统计：有内容的格 `[data-chat-flow-key]` 700+ 行、节点 1.4 万；没内容的格 0 行、节点约 150。不是慢，是没装配。 |
+| 根因 | DSH `0.2.3-alpha.2` 起，`dsh-client-ui-conversation` 的对话装配只在某引用保留 `conversation` 分面时跟随会话：`assembly.ts` 的 `follow(retained)` 在 `retained === false` 时直接 `rebuildRegistry([], false)` 发布空结果。官方 `mainView`、`sidebarView`、`sidebarChat` 三处 retain 都带了 `facets: { conversation: true }`，插件没带，所以除主视图正在看的会话外，其余窗格永远拿空对话。旧版（`0.1.x` 的 `assembly.ts`）没有 `SessionRetainFacetMap`/`retained`，所以以前能显示。 |
+| 修法 | `usePaneReference` 的 `sessions.retain()` 加 `facets: { conversation: true }`，分面随引用一起释放，释放后宿主自己把会话收回缓冲。 |
+| 实测 | 用户真实三格布局（2066e216 / 94ae794f / 49936701）冷开：三格全部装配真对话，行数 187 / 841 / 367，节点 4670 / 17122 / 7408；分帧 `R,T,T` → 1.3 秒 `R,R,T` → 2.4 秒 `R,R,R`，长任务最大 526 ms。2×2 四格平衡布局同样四格全出内容（353 / 816 / 172 / 187 行），约 3.9 秒就绪。窗格内点「加载更早」能继续分页（874 → 1404 → 1542 行）。 |
+| 未采纳 | `content-visibility:auto; contain-intrinsic-size:auto 120px` 加在对话行上：出现 879 ms 长任务，基线 310–366 ms，反而更慢。 |
+| 顺带删除 | `trimPaneHistory()`（用 `session.bufferOlder()` 试缩窗格页）：对已挂载行数无效（797 行裁完还是 797 行），只会让回看多绕一层，已整段删掉。 |
+
+**教训**：分屏窗格复用官方对话工厂，就不是独立的渲染路径——官方往里加约束（这次是保留分面），所有复用方都得跟着传同样的参数，否则表现成「没报错但内容空白」，很容易被误判成性能问题。

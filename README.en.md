@@ -12,6 +12,8 @@
 - **Free layout** — split right or down, drag a pane onto another to swap them, drag onto a pane's edge to move it there, drag the divider to resize, double-click the divider to flip the orientation and reset to 50/50.
 - **Fill panes from anywhere** — drag a Session row from the sidebar into a pane, or use the row's own "放入分屏窗格 / Load into split pane" action, or the pane's context menu.
 - **Real conversations** — every pane mounts the official `conversation.content` slot for its Session, so streaming, tools, attachments and the composer all behave exactly as they do in the normal view.
+- **Queued loading** — restoring a multi-pane layout opens panes through a queue (at most two at a time); queued panes show `正在载入会话… / Loading session…` instead of all firing at once.
+- **Clean footer** — the goal bar stays on one line (ellipsis when it overflows), the action buttons and the Turbo slider stay inside the composer card, and turns / speed / usage / cache hit / context sit on their own row below it, so wide and narrow panes both stay readable.
 - **Unread dots** — the sidebar's unread indicator is mirrored onto the pane title, so you can see which pane is talking.
 - **Import running Sessions** — one menu action arranges every running Session into panes (up to the pane cap) without closing anything. Sessions from a scheduler workspace are skipped (last cwd segment `cron-jobs`; see `SCHEDULED_WORKSPACE` in `client.js`).
 - **Persisted layout** — the whole tree (panes, ratios, assignment) is kept in `localStorage` and restored on reload.
@@ -52,7 +54,7 @@ This limitation is why the panel-based design is the stable release: a floating 
 ## Requirements
 
 - DeepSeek Harness Web with the official UI packages (`dsh-client-ui-layout`, `-session`, `-conversation`, `dsh-client-locale`, `dsh-api-session-controller`).
-- Developed against DSH `0.1.1-rc.2`.
+- Current version is developed and verified against DSH `0.2.3-alpha.2`; 1.0.x ran on `0.1.1-rc.2`.
 
 ## Layout
 
@@ -61,6 +63,7 @@ client.js          the whole web half (panel, pane tree, drag & drop, i18n, CSS)
 index.js           host half: announces the bundle, registers nothing else
 cordis.patch.yml   loader patch fragment ("insert id: web-split")
 package.json       manifest, including the dsh.client declaration
+tests/             read-only regression scripts (pane footer geometry, run on a real split)
 docs/DEVLOG.md     development log, day by day (Chinese, local notes)
 ```
 
